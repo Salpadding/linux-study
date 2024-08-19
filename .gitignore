@@ -1,0 +1,15 @@
+.ccls-cache
+*.img
+*.bin
+*.o
+*.a
+/boot/bootsect
+/boot/setup
+/boot/Image
+/debug/__pycache__
+/kernel/chr_drv/keyboard.s
+*.elf
+/tools/build/build
+/tools/link/link
+/tools/minix/minix
+/tools/system

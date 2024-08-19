@@ -1,0 +1,11 @@
+{
+    "input": "jump.elf",
+    "output": "jump.bin",
+    "sections": [
+        {
+            "name": ".text",
+            "offset": "0"
+        }
+    ]
+}
+

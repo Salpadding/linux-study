@@ -1,0 +1,19 @@
+{
+    "input": "tools/system.elf",
+    "output": "tools/system.bin",
+    "sections": [
+        {
+            "name": ".text",
+            "offset": "0"
+        },
+        {
+            "name": ".data",
+            "offset": "%-0x100000"
+        },
+        {
+            "name": ".rodata",
+            "offset": "%-0x100000"
+        }
+    ]
+}
+
