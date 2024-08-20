@@ -416,7 +416,7 @@ restart_interp:
   }
 
   p = oldp;
-  argc = oldenvc;
+  argc = oldargc;
   envc = oldenvc;
 
   /* OK, This is the point of no return */

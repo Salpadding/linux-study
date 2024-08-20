@@ -4,4 +4,4 @@ file tools/system.elf
 
 set architecture i386
 
-b copy_process
+b exec.c:424
