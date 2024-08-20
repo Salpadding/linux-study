@@ -4,5 +4,4 @@ file tools/system.elf
 
 set architecture i386
 
-
-b try_to_share
+b copy_process

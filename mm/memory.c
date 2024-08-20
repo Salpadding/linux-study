@@ -38,6 +38,9 @@
 #include <linux/sched.h>
 #include <linux/task_ctl.h>
 #include <self_mapping.h>
+#include <string.h>
+
+#define UL(x) ((unsigned long)x)
 
 __attribute__((aligned(PAGE_SIZE))) unsigned long pg_dir[1024];
 
@@ -66,6 +69,35 @@ void free_page(unsigned long addr) {
     return;
   mem_map[addr] = 0;
   panic("trying to free free page");
+}
+
+unsigned long kpage_alloc_start = 63UL * TASK_SIZE;
+
+void *kpage_alloc(unsigned long page_nr) {
+  unsigned long i = page_nr;
+  unsigned long ret = kpage_alloc_start;
+  unsigned long *dir = PG_DIR_ENTRY(kpage_alloc_start);
+  unsigned long *pt = PG_TBL_ENTRY(kpage_alloc_start);
+
+  if (!((*dir) & 1)) {
+    *dir = get_free_page() | 7;
+  }
+
+  while (i--) {
+    if (kpage_alloc_start + PAGE_SIZE >= 0xffc00000)
+      panic("kpage alloc overflow\n");
+    kpage_alloc_start += PAGE_SIZE;
+    *(pt++) = get_free_page() | 7;
+
+    if (UL(pt) % PAGE_SIZE == 0) {
+      dir++;
+      if (!((*dir) & 1)) {
+        *dir = get_free_page() | 7;
+      }
+    }
+  }
+  memset((void *)ret, 0, PAGE_SIZE * page_nr);
+  return (void *)ret;
 }
 
 /*
@@ -471,7 +503,7 @@ void do_no_page(unsigned long error_code, unsigned long address,
   i = tmp + 4096 - current->end_data;
   if (i > 4095)
     i = 0;
-  tmp = page + 4096;
+  tmp = page + 4096; // address - start_code + 4096 - end_data + page + 4096
   while (i-- > 0) {
     tmp--;
     *(char *)tmp = 0;

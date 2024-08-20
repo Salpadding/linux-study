@@ -4,6 +4,7 @@
  *  (C) 1991  Linus Torvalds
  */
 
+#include <linux/kernel.h>
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -13,7 +14,6 @@
 
 #include <linux/sched.h>
 #include <linux/tty.h>
-#include <linux/kernel.h>
 
 #include <asm/segment.h>
 

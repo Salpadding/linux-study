@@ -4,11 +4,11 @@
  *  (C) 1991  Linus Torvalds
  */
 
+#include <linux/kernel.h>
 #include <string.h>
 #include <sys/stat.h>
 
 #include <linux/sched.h>
-#include <linux/kernel.h>
 #include <linux/mm.h>
 #include <asm/system.h>
 

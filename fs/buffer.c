@@ -25,6 +25,7 @@
 #include <linux/config.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <linux/kernel.h>
 
 void put_super(int dev);
 void invalidate_inodes(int dev);

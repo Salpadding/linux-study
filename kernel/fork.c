@@ -72,27 +72,29 @@ int copy_mem(int nr, struct task_struct *p) {
 
 // copy new task as thread rather than process
 static int copy_init_task(unsigned long from, unsigned long to) {
-  mmap(to, 0, ((unsigned long)&_text) >> 12, 7);
   mmap(to + (unsigned long)&_text, (unsigned long)&_text,
        (((unsigned long)&_data) - ((unsigned long)&_text)) >> 12, 5);
   mmap(to + (unsigned long)&_data, (unsigned long)&_data,
        (((unsigned long)&_end) - ((unsigned long)&_data)) >> 12, 7);
 
   unsigned long i = 0;
+  unsigned long tmp;
 
+  // 防止被 free 掉
   while (i < (unsigned long)&_end) {
     mem_map[i >> 12]++;
     i += PAGE_SIZE;
   }
 
-  // 处理用户态栈区域
-  mem_map[((unsigned long)&init_task_user) >> 12]--;
-
-  unsigned long new_user_stack = get_free_page();
-  memcpy((char *)new_user_stack,
-         (void *)(from + ((unsigned long)&init_task_user)), PAGE_SIZE);
-
-  mmap(to + ((unsigned long)(init_task_user)), new_user_stack, 1, 7);
+  i = (unsigned long)init_user_stack;
+  // 用户态栈区域不共享
+  while (i < ((unsigned long)init_user_stack + sizeof(init_user_stack))) {
+    tmp = get_free_page();
+    memcpy((void *)tmp, (void *)(i + from), PAGE_SIZE);
+    mmap(to + i, tmp, 1, 7);
+    mem_map[i >> 12]--;
+    i += PAGE_SIZE;
+  }
 
   invalidate();
   return 0;

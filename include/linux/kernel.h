@@ -4,15 +4,14 @@
 /*
  * 'kernel.h' contains some often-used function prototypes etc
  */
-void verify_area(void * addr,int count);
-extern void panic(const char * str);
+void verify_area(void *addr, int count);
 extern void do_exit(long error_code);
-int printf(const char * fmt, ...);
-int printk(const char * fmt, ...);
-void console_print(const char * str);
-int tty_write(unsigned ch,char * buf,int count);
-void * malloc(unsigned int size);
-void free_s(void * obj, int size);
+int printf(const char *fmt, ...);
+int printk(const char *fmt, ...);
+void console_print(const char *str);
+int tty_write(unsigned ch, char *buf, int count);
+void *malloc(unsigned int size);
+void free_s(void *obj, int size);
 extern void hd_times_out(void);
 extern void sysbeepstop(void);
 extern void blank_screen(void);
@@ -34,7 +33,6 @@ extern int blankcount;
  */
 #define suser() (current->euid == 0)
 
-
 extern char _end;
 extern char _bss;
 extern char _ebss;
@@ -54,10 +52,20 @@ void trap_init(void);
 void chr_dev_init(void);
 void tty_init(void);
 void sched_init(void);
+void console_print(const char *x);
 
 #ifndef PAGE_SIZE
 #define PAGE_SIZE 4096
 #endif
 
-extern char init_task_user[PAGE_SIZE];
+#define panic(x)                                                               \
+  ({                                                                           \
+    __asm__ __volatile__("cli\n\t");                                           \
+    console_print(x);                                                          \
+    while (1)                                                                  \
+      ;                                                                        \
+  })
+
+#define INIT_STACK_PAGES 4
+
 #endif

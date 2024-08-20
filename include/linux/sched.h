@@ -69,7 +69,6 @@ extern int free_page_tables(unsigned long from, unsigned long size);
 extern void sched_init(void);
 extern void schedule(void);
 extern void trap_init(void);
-extern void panic(const char *str);
 extern int tty_write(unsigned minor, char *buf, int count);
 
 typedef int (*fn_ptr)();
@@ -226,7 +225,7 @@ struct task_struct {
           /* ldt */ {0x000003ff, 0x00c0fa00},                                  \
           {0x000003ff, 0x00c0f200},                                            \
       },                                                                       \
-      /*tss*/ {0,       PAGE_SIZE + (long)&init_task,                          \
+      /*tss*/ {0,       PAGE_SIZE * INIT_STACK_PAGES + (long)&init_task,       \
                0x10,    0,                                                     \
                0,       0,                                                     \
                0,       (long)&pg_dir,                                         \
@@ -331,21 +330,32 @@ static unsigned long _get_base(const char *addr) {
 
 typedef union {
   struct task_struct task;
-  char stack[PAGE_SIZE];
+  char stack[PAGE_SIZE * INIT_STACK_PAGES];
 } task_union_t;
 
 extern task_union_t init_task;
 
+typedef char task_ctl_string_t[32];
+
 typedef struct {
   unsigned long task_nr;
+  struct task_struct *task;
   unsigned long bits;
-  char filename[32];
+  task_ctl_string_t filename;
+  task_ctl_string_t argv[32];
+  task_ctl_string_t envp[32];
+
 } task_ctl_t;
 
-extern task_ctl_t task_ctl_data[NR_TASKS];
+extern task_ctl_t *task_ctl_data;
 extern task_ctl_t *task_ctl_current;
 
+void task_ctl_current_update(long nr);
+
 // 代码段写保护
-#define TASK_CTL_INIT_FORK 1
+#define TASK_CTL_INIT_FORK (1UL)
+#define TASK_CTL_SH_BANG (2UL)
+
+extern char init_user_stack[PAGE_SIZE * INIT_STACK_PAGES];
 
 #endif

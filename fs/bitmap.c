@@ -5,10 +5,10 @@
  */
 
 /* bitmap.c contains the code that handles the inode and block bitmaps */
+#include <linux/kernel.h>
 #include <string.h>
 
 #include <linux/sched.h>
-#include <linux/kernel.h>
 
 #define clear_block(addr) \
 __asm__("cld\n\t" \

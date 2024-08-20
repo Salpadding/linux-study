@@ -11,9 +11,10 @@ def addr_of(x):
     return struct.unpack('<I', sym.value().address.bytes)[0]
 
 text_start = addr_of('_text')
-text_end = addr_of('_etext')
+text_end = addr_of('_data')
 text_len = text_end - text_start
 
+print(f'text_len = {hex(text_len)}')
 mem = inf.read_memory(text_start, text_len).tobytes()
 
 for i in range(0, text_len):
@@ -22,6 +23,7 @@ for i in range(0, text_len):
         break
 
 
+print('check ok')
 
 
 

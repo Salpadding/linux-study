@@ -7,6 +7,7 @@
 #define _FS_H
 
 #include <sys/types.h>
+#include <linux/kernel.h>
 
 /* devices are as follows: (same as minix, so we can use the minix
  * file system. These are major numbers.)

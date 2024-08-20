@@ -10,6 +10,7 @@
 #include <linux/head.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/sched.h>
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
@@ -134,8 +135,6 @@ __attribute__((aligned(8))) desc_ptr_t gdt_ptr = {
 #define UL(x) ((unsigned long)(x))
 #define BSS_SIZE (UL(&_ebss) - UL(&_bss))
 
-__attribute__((aligned(PAGE_SIZE))) char init_task_user[PAGE_SIZE];
-
 static void enable_sse() {
   unsigned int cr4;
 
@@ -153,7 +152,7 @@ static void enable_sse() {
 #define PAUSE() SYSCALL0(__NR_pause)
 #define ALARM(x) SYSCALL1(__NR_alarm, x)
 #define DUP(fd) SYSCALL1(__NR_dup, fd)
-#define WRITE(fd, buf, len) SYSCALL3(__NR_write, fd, buf, len)
+#define WRITE_S(fd, buf, len) SYSCALL3(__NR_write, fd, buf, len)
 #define EXECVE(path, argv_rc, envp_rc)                                         \
   SYSCALL3(__NR_execve, path, argv_rc, envp_rc)
 
@@ -162,14 +161,15 @@ static void enable_sse() {
 
 int open(const char *filename, int flag, ...);
 
+char printbuf[1024];
+
 int printf(const char *fmt, ...) {
 
-  char printbuf[1024];
   va_list args;
   int i;
 
   va_start(args, fmt);
-  WRITE(1, printbuf, i = vsprintf(printbuf, fmt, args));
+  WRITE_S(1, printbuf, i = vsprintf(printbuf, fmt, args));
   va_end(args);
   return i;
 }
@@ -186,6 +186,11 @@ static char term[32];
 #define CON_COLS (((*(unsigned short *)0x9000e) & 0xff00) >> 8)
 
 int main() {
+  __asm__ __volatile__(
+      "movl %0, %%esp\n\t"
+      "movl %%esp, %%ebp\n\t" ::"r"(((unsigned long)&init_task) +
+                                    PAGE_SIZE * INIT_STACK_PAGES));
+
   // setup fpu, write protection
   __asm__ __volatile__("mov %%cr0, %%eax\n"
                        "or  %0, %%eax\n"
@@ -226,6 +231,7 @@ int main() {
   sprintf(term, "TERM=con%dx%d", CON_COLS, CON_ROWS);
 
   mem_init();
+
   trap_init();
   blk_dev_init();
   chr_dev_init();
@@ -243,7 +249,8 @@ int main() {
 
   __asm__ __volatile__("sti\n\t");
 
-  move_to_user_mode(&init_task_user);
+  move_to_user_mode(((char *)init_user_stack) + sizeof(init_user_stack));
+
   unsigned long pid;
 
   if (pid = FORK()) {

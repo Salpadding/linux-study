@@ -62,6 +62,9 @@ __attribute__((aligned(PAGE_SIZE))) task_union_t init_task = {
     INIT_TASK,
 };
 
+__attribute__((
+    aligned(PAGE_SIZE))) char init_user_stack[PAGE_SIZE * INIT_STACK_PAGES];
+
 unsigned long volatile jiffies = 0;
 unsigned long startup_time = 0;
 int jiffies_offset = 0; /* # clock ticks to add to get "true
@@ -161,15 +164,8 @@ void schedule(void) {
       if (*p)
         (*p)->counter = ((*p)->counter >> 1) + (*p)->priority;
   }
+  task_ctl_current_update(next);
   switch_to(next);
-
-  unsigned long cur_nr;
-
-  for (cur_nr = 0; cur_nr < NR_TASKS && task[cur_nr] != current; cur_nr++)
-    ;
-
-  if (cur_nr < NR_TASKS)
-    task_ctl_current = &task_ctl_data[cur_nr];
 }
 
 int sys_pause(void) {
@@ -435,9 +431,13 @@ void sched_init(void) {
   outb(inb_p(0x21) & ~0x01, 0x21);
   set_system_gate(0x80, &system_call);
 
+  task_ctl_data =
+      kpage_alloc((sizeof(task_ctl_t) * NR_TASKS + PAGE_SIZE - 1) / PAGE_SIZE);
+
   for (i = 0; i < NR_TASKS; i++)
     task_ctl_data[i].task_nr = i;
 
   task_ctl_data[0].bits |= TASK_CTL_INIT_FORK;
   task_ctl_current = task_ctl_data;
+  task_ctl_current->task = &init_task.task;
 }
