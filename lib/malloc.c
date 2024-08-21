@@ -1,48 +1,27 @@
-/*
- * malloc.c --- a general purpose kernel memory allocator for Linux.
+/**
+ * 内存分配器: 适用于分配 size < 4K 的对象
  * 
- * Written by Theodore Ts'o (tytso@mit.edu), 11/29/91
+ * 概念:
  *
- * This routine is written to be as fast as possible, so that it
- * can be called from the interrupt level.
+ * 1. 桶: 非空的桶包含了一个链表(free_ptr) 链表节点位于同一个页面内, 准确的说是把页面切成 n 块
+ * 然后用链表的方式串起来，要申请内存首先要找到从哪个桶申请
  *
- * Limitations: maximum size of memory we can allocate using this routine
- *	is 4k, the size of a page in Linux.
+ * 2. 桶列表: 去掉桶内的 free_ptr, 桶自身也占用内存, 桶自身占用的内存通过 get_free_page 分配
+ *    一次分配 32 个 用链表方式串起来。通过 free_bucket_desc 是否为空可以判断是否有可用的空桶
  *
- * The general game plan is that each page (called a bucket) will only hold
- * objects of a given size.  When all of the object on a page are released,
- * the page can be returned to the general free pool.  When malloc() is
- * called, it looks for the smallest bucket size which will fulfill its
- * request, and allocate a piece of memory from that bucket pool.
+ * 4. 桶内的 free_ptr 采用了懒加载的策略，分配桶的时候不会立刻分配 free_ptr, 而是一个空桶
  *
- * Each bucket has as its control block a bucket descriptor which keeps 
- * track of how many objects are in use on that page, and the free list
- * for that page.  Like the buckets themselves, bucket descriptors are
- * stored on pages requested from get_free_page().  However, unlike buckets,
- * pages devoted to bucket descriptor pages are never released back to the
- * system.  Fortunately, a system should probably only need 1 or 2 bucket
- * descriptor pages, since a page can hold 256 bucket descriptors (which
- * corresponds to 1 megabyte worth of bucket pages.)  If the kernel is using 
- * that much allocated memory, it's probably doing something wrong.  :-)
+ * 5. 桶目录: 这里包含的桶都是指定过对象大小并且分配过 free_ptr 的桶
  *
- * Note: malloc() and free() both call get_free_page() and free_page()
- *	in sections of code where interrupts are turned off, to allow
- *	malloc() and free() to be safely called from an interrupt routine.
- *	(We will probably need this functionality when networking code,
- *	particularily things like NFS, is added to Linux.)  However, this
- *	presumes that get_free_page() and free_page() are interrupt-level
- *	safe, which they may not be once paging is added.  If this is the
- *	case, we will need to modify malloc() to keep a few unused pages
- *	"pre-allocated" so that it can safely draw upon those pages if
- * 	it is called from an interrupt routine.
  *
- * 	Another concern is that get_free_page() should not sleep; if it 
- *	does, the code is carefully ordered so as to avoid any race 
- *	conditions.  The catch is that if malloc() is called re-entrantly, 
- *	there is a chance that unecessary pages will be grabbed from the 
- *	system.  Except for the pages for the bucket descriptor page, the 
- *	extra pages will eventually get released back to the system, though,
- *	so it isn't all that bad.
+ * 分配器工作过程:
+ *
+ * 1. 先找桶, 去桶目录里找到对象大小最合适的非空的桶
+ * 2. 如果没有找到桶,就去桶列表里面找还没初始化的空桶,如果桶列表都空了,那就得申请一个页面分配32个空桶
+ *    现在有了空桶,对空桶指定对象大小,初始化free_ptr,加入桶目录
+ *
+ * 3. 现在有了非空的桶了,从free_ptr中找到一个对象然后return
+ *
  */
 
 #include <linux/kernel.h>
