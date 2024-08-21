@@ -3,21 +3,29 @@
 
 #define memset(s, c, count)                                                    \
   ({                                                                           \
-    __asm__ __volatile__("cld\n\t"                                             \
+    __asm__ __volatile__("movl %0, %%edi\n\t"                                  \
+                         "movl %1, %%ecx\n\t"                                  \
+                         "cld\n\t"                                             \
                          "rep\n\t"                                             \
-                         "stosb" ::"a"((unsigned long)(c)),                    \
-                         "D"((unsigned long)(s)),                              \
-                         "c"((unsigned long)(count)));                         \
+                         "stosb"                                               \
+                         :                                                     \
+                         : "g"((unsigned long)(s)),                            \
+                           "g"((unsigned long)(count)),                        \
+                           "a"((unsigned long)(c))                             \
+                         : "edi", "ecx");                                      \
     s;                                                                         \
   })
 
 #define memcpy(dest, src, n)                                                   \
   ({                                                                           \
-    __asm__("cld\n\t"                                                          \
+    __asm__("movl %0, %%ecx\n\t"                                               \
+            "movl %1, %%esi\n\t"                                               \
+            "movl %2, %%edi\n\t"                                               \
+            "cld\n\t"                                                          \
             "rep\n\t"                                                          \
-            "movsb" ::"c"(n),                                                  \
-            "S"((unsigned long)(src)), "D"((unsigned long)(dest))              \
-            :);                                                                \
+            "movsb" ::"g"(n),                                                  \
+            "g"((unsigned long)(src)), "g"((unsigned long)(dest))              \
+            : "ecx", "esi", "edi");                                            \
     dest;                                                                      \
   })
 
