@@ -4,4 +4,4 @@ file tools/system.elf
 
 set architecture i386
 
-b exec.c:424
+b sys_uselib

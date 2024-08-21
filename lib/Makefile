@@ -1,6 +1,7 @@
 include ../rules.mk
 
-objs := string.o ctype.o open.o errno.o _exit.o wait.o
+objs := _exit.o close.o ctype.o dup.o errno.o execve.o \
+		malloc.o open.o setsid.o string.o wait.o write.o
 
 lib.o: $(objs)
 	$(LD) -r -o lib.o $(objs)
