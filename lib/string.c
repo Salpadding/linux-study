@@ -1,13 +1,5 @@
 #include <string.h>
 
-__attribute__((noinline)) void *memset(void *s, char c, int count) {
-  __asm__ __volatile__("cld\n\t"
-                       "rep\n\t"
-                       "stosb" ::"a"(c),
-                       "D"(s), "c"(count));
-  return s;
-}
-
 __attribute__((noinline)) int strlen(const char *s) {
   unsigned long __res = 0xffffffff;
   __asm__ __volatile__("cld\n\t"
@@ -43,15 +35,6 @@ __attribute__((noinline)) int strncmp(const char *cs, const char *ct,
   return __res;
 }
 
-__attribute__((noinline)) void *memcpy(void *dest, const void *src, int n) {
-  __asm__("cld\n\t"
-          "rep\n\t"
-          "movsb" ::"c"(n),
-          "S"(src), "D"(dest)
-          :);
-  return dest;
-}
-
 /*
  * This string-include defines all string functions as inline
  * functions. Use gcc. It also assumes ds=es=data space, this should be
@@ -80,7 +63,7 @@ char *strcpy(char *dest, const char *src) {
  * while((tmp2 = *cs++) != (tmp1 = *ct++) && tmp1);
  * if(tmp1 != tmp2) return SIGNUM(tmp2 - tmp1);
  * if(!tmp1) return 0;
- * 
+ *
  *
  */
 int strcmp(const char *cs, const char *ct) {
@@ -123,7 +106,6 @@ __attribute__((noinline)) char *strncpy(char *dest, const char *src,
           :);
   return dest;
 }
-
 
 /**
  * find first char in string

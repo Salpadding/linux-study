@@ -1,13 +1,29 @@
 #ifndef _STRING_H
 #define _STRING_H
 
+#define memset(s, c, count)                                                    \
+  ({                                                                           \
+    __asm__ __volatile__("cld\n\t"                                             \
+                         "rep\n\t"                                             \
+                         "stosb" ::"a"((unsigned long)(c)),                    \
+                         "D"((unsigned long)(s)),                              \
+                         "c"((unsigned long)(count)));                         \
+    s;                                                                         \
+  })
+
+#define memcpy(dest, src, n)                                                   \
+  ({                                                                           \
+    __asm__("cld\n\t"                                                          \
+            "rep\n\t"                                                          \
+            "movsb" ::"c"(n),                                                  \
+            "S"((unsigned long)(src)), "D"((unsigned long)(dest))              \
+            :);                                                                \
+    dest;                                                                      \
+  })
+
 int strlen(const char *s);
 
-void *memset(void *s, char c, int count);
-
 int strncmp(const char *cs, const char *ct, int count);
-
-void *memcpy(void *dest, const void *src, int n);
 
 /*
  * This string-include defines all string functions as inline
@@ -25,9 +41,7 @@ char *strcpy(char *dest, const char *src);
 
 int strcmp(const char *cs, const char *ct);
 
-
-char *strncpy(char *dest, const char *src,
-                                        int count);
+char *strncpy(char *dest, const char *src, int count);
 
 char *strchr(const char *s, char c);
 #endif
