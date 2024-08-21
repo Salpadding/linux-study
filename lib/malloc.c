@@ -102,14 +102,15 @@ static inline void init_bucket_desc()
 	first = bdesc = (struct bucket_desc *) get_free_page();
 	if (!bdesc)
 		panic("Out of memory in init_bucket_desc()");
-	for (i = PAGE_SIZE/sizeof(struct bucket_desc); i > 1; i--) {
-		bdesc->next = bdesc+1;
+	for (i = PAGE_SIZE/sizeof(struct bucket_desc); i > 1; i--) { // loop 31 times
+		bdesc->next = bdesc+1; // 连续分配 链表节点 你可以重排为 i=[0,30]
 		bdesc++;
 	}
 	/*
 	 * This is done last, to avoid race conditions in case 
 	 * get_free_page() sleeps and this routine gets called again....
 	 */
+    // 此时 bdesc = &first[31] 也就是最后一项 最后一项的next指向空指针
 	bdesc->next = free_bucket_desc;
 	free_bucket_desc = first;
 }
@@ -124,6 +125,7 @@ void *malloc(unsigned int len)
 	 * First we search the bucket_dir to find the right bucket change
 	 * for this request.
 	 */
+    /* best fit */
 	for (bdir = bucket_dir; bdir->size; bdir++)
 		if (bdir->size >= len)
 			break;
