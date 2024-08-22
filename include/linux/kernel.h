@@ -68,4 +68,19 @@ void console_print(const char *x);
 
 #define INIT_STACK_PAGES 4
 
+typedef struct {
+  long *esp;
+  long error_code;
+  long fs;
+  long es;
+  long ds;
+  long ebp;
+  long esi;
+  long edi;
+  long edx;
+  long ecx;
+  long ebx;
+  long eax;
+} trap_stack_t;
+
 #endif

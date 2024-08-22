@@ -2,3 +2,4 @@
 #include <linux/sched.h>
 #include <linux/tty.h>
 
+void init_swapping() {}

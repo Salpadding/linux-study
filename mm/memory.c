@@ -37,6 +37,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/task_ctl.h>
+#include <patch.h>
 #include <self_mapping.h>
 #include <string.h>
 
@@ -48,11 +49,17 @@ __attribute__((aligned(PAGE_SIZE))) unsigned long pg_dir[1024];
   ((((addr) + 4095) & ~4095) < current->start_code + current->end_code)
 
 #define copy_page(from, to)                                                    \
-  __asm__("cld ; rep ; movsl" ::"S"(from), "D"(to), "c"(1024) :)
+  __asm__("movl %0, %%esi\n\t"                                                 \
+          "movl %1, %%edi\n\t"                                                 \
+          "movl %2, %%ecx\n\t"                                                 \
+          "cld ; rep ; movsl" ::"rm"(from),                                    \
+          "rm"(to), "rm"(1024)                                                 \
+          : "edi", "esi", "ecx")
 
-unsigned char mem_map[PAGING_PAGES] = {
-    0,
-};
+#define CHECK_LAST_NR 16
+static unsigned long last_pages[CHECK_LAST_NR];
+
+unsigned char mem_map[PAGING_PAGES];
 
 /*
  * Free a page of memory at physical address 'addr'. Used by
@@ -61,43 +68,14 @@ unsigned char mem_map[PAGING_PAGES] = {
 void free_page(unsigned long addr) {
   if (addr < LOW_MEM)
     return;
-  if (addr >= HIGH_MEMORY)
-    panic("trying to free nonexistent page");
-  addr -= LOW_MEM;
-  addr >>= 12;
-  if (mem_map[addr]--)
-    return;
-  mem_map[addr] = 0;
-  panic("trying to free free page");
-}
-
-unsigned long kpage_alloc_start = 63UL * TASK_SIZE;
-
-void *kpage_alloc(unsigned long page_nr) {
-  unsigned long i = page_nr;
-  unsigned long ret = kpage_alloc_start;
-  unsigned long *dir = PG_DIR_ENTRY(kpage_alloc_start);
-  unsigned long *pt = PG_TBL_ENTRY(kpage_alloc_start);
-
-  if (!((*dir) & 1)) {
-    *dir = get_free_page() | 7;
+  if (addr < HIGH_MEMORY) {
+    addr -= LOW_MEM;
+    addr >>= 12;
+    if (mem_map[addr]--)
+      return;
+    mem_map[addr] = 0;
   }
-
-  while (i--) {
-    if (kpage_alloc_start + PAGE_SIZE >= 0xffc00000)
-      panic("kpage alloc overflow\n");
-    kpage_alloc_start += PAGE_SIZE;
-    *(pt++) = get_free_page() | 7;
-
-    if (UL(pt) % PAGE_SIZE == 0) {
-      dir++;
-      if (!((*dir) & 1)) {
-        *dir = get_free_page() | 7;
-      }
-    }
-  }
-  memset((void *)ret, 0, PAGE_SIZE * page_nr);
-  return (void *)ret;
+  printk("trying to free free page: memory probably corrupted");
 }
 
 /*
@@ -105,6 +83,8 @@ void *kpage_alloc(unsigned long page_nr) {
  * by 'exit()'. As does copy_page_tables(), this handles only 4Mb blocks.
  */
 int free_page_tables(unsigned long from, unsigned long size) {
+  unsigned long page;
+  unsigned long page_dir;
   unsigned long *pg_table;
   unsigned long *dir, nr;
 
@@ -119,23 +99,28 @@ int free_page_tables(unsigned long from, unsigned long size) {
   dir = (unsigned long *)((from >> 20) & 0xffc); /* _pg_dir = 0 */
 #endif
   for (; size-- > 0; dir++) {
-    if (!(1 & *dir))
+    if (!(page_dir = *dir))
       continue;
-    pg_table = (unsigned long *)(0xfffff000 & *dir);
-    for (nr = 0; nr < 1024; nr++) {
-      if (*pg_table) {
-        if (1 & *pg_table)
-          free_page(0xfffff000 & *pg_table);
-        else
-          swap_free(*pg_table >> 1);
-        *pg_table = 0;
-      }
-      pg_table++;
-    }
-    free_page(0xfffff000 & *dir);
     *dir = 0;
+    if (!(page_dir & 1)) {
+      printk("free_page_tables: bad page directory.");
+      continue;
+    }
+    pg_table = (unsigned long *)(0xfffff000 & page_dir);
+    for (nr = 0; nr < 1024; nr++, pg_table++) {
+      if (!(page = *pg_table))
+        continue;
+      *pg_table = 0;
+      if (1 & page)
+        free_page(0xfffff000 & page);
+      else
+        swap_free(page >> 1); // free page which had been swapped out
+    }
+    free_page(0xfffff000 & page_dir);
   }
   invalidate();
+  for (page = 0; page < CHECK_LAST_NR; page++)
+    last_pages[page] = 0;
   return 0;
 }
 
@@ -175,10 +160,17 @@ int copy_page_tables(unsigned long from, unsigned long to, long size) {
 #endif
   size = ((unsigned)(size + 0x3fffff)) >> 22;
   for (; size-- > 0; from_dir++, to_dir++) {
-    if (1 & *to_dir)
-      panic("copy_page_tables: already exist");
-    if (!(1 & *from_dir))
+    if (*to_dir)
+      printk("copy_page_tables: already exist, "
+             "probable memory corruption\n");
+    if (!*from_dir)
       continue;
+    if (!(1 & *from_dir)) {
+      printk("copy_page_tables: page table swapped out, "
+             "probable memory corruption");
+      *from_dir = 0;
+      continue;
+    }
     from_page_table = (unsigned long *)(0xfffff000 & *from_dir);
     if (!(to_page_table = (unsigned long *)get_free_page()))
       return -1; /* Out of memory, see freeing */
@@ -188,7 +180,8 @@ int copy_page_tables(unsigned long from, unsigned long to, long size) {
       this_page = *from_page_table;
       if (!this_page)
         continue;
-      if (!(1 & this_page)) {
+      if (!(1 & this_page)) { // 需要浅拷贝的页面换出了 那就换入
+                              // 然后被新的进程地址空间指向换出的位置
         if (!(new_page = get_free_page()))
           return -1;
         read_swap_page(this_page >> 1, (char *)new_page);
@@ -286,20 +279,40 @@ unsigned long put_dirty_page(unsigned long page, unsigned long address) {
 }
 
 void un_wp_page(unsigned long *table_entry) {
-  unsigned long old_page, new_page;
+  unsigned long old_page;
+  unsigned long new_page = 0;
+  unsigned long dirty;
 
-  old_page = 0xfffff000 & *table_entry;
+repeat:
+  old_page = *table_entry;
+  dirty = old_page & PAGE_DIRTY;
+  if (!(old_page & 1)) {
+    if (new_page)
+      free_page(new_page);
+    return;
+  }
+  old_page &= 0xfffff000;
+  if (old_page >= HIGH_MEMORY) {
+    if (new_page)
+      free_page(new_page);
+    printk("bad page address\n\r");
+    do_exit(SIGSEGV);
+  }
   if (old_page >= LOW_MEM && mem_map[MAP_NR(old_page)] == 1) {
     *table_entry |= 2;
     invalidate();
+    if (new_page)
+      free_page(new_page);
     return;
   }
-  if (!(new_page = get_free_page()))
-    oom();
-  if (old_page >= LOW_MEM)
-    mem_map[MAP_NR(old_page)]--;
+  if (!new_page) {
+    if (!(new_page = get_free_page()))
+      oom();
+    goto repeat;
+  }
   copy_page(old_page, new_page);
-  *table_entry = new_page | 7;
+  *table_entry = new_page | dirty | 7;
+  free_page(old_page);
   invalidate();
 }
 
@@ -311,9 +324,7 @@ void un_wp_page(unsigned long *table_entry) {
  * If it's in code space we exit with a segment error.
  */
 void do_wp_page(unsigned long error_code, unsigned long address,
-                unsigned long fs, unsigned long es, unsigned long ds,
-                unsigned long edx, unsigned long ecx, unsigned long cs,
-                unsigned long eip) {
+                trap_stack_t *stack) {
   if (address < TASK_SIZE)
     printk("\n\rBAD! KERNEL MEMORY WP-ERR!\n\r");
   if (address - current->start_code > TASK_SIZE) {
@@ -328,12 +339,6 @@ void do_wp_page(unsigned long error_code, unsigned long address,
   if (task_ctl_current->bits & TASK_CTL_INIT_FORK) {
     panic("unexpected wp page under init fork\n");
   }
-#if 0
-/* we cannot do this yet: the estdio library writes to code space */
-/* stupid, stupid. I really want the libc.a from GNU */
-	if (CODE_SPACE(address))
-		do_exit(SIGSEGV);
-#endif
   un_wp_page(PG_TBL_ENTRY(address));
 }
 
@@ -441,32 +446,32 @@ static int share_page(struct m_inode *inode, unsigned long address) {
 }
 
 void do_no_page(unsigned long error_code, unsigned long address,
-                unsigned long fs, unsigned long es, unsigned long ds,
-                unsigned long edx, unsigned long ecx, unsigned long cs,
-                unsigned long eip) {
+                struct task_struct *tsk) {
+  static unsigned int last_checked = 0;
   int nr[4];
   unsigned long tmp;
   unsigned long page;
   int block, i;
-  struct m_inode *inode;
+  struct inode *inode;
 
-  if (address < PAGE_SIZE) {
-    printk("null pointer exception\n");
-  }
-
-  if (address < TASK_SIZE) {
-    printk("\n\rBAD!! KERNEL PAGE MISSING\n\r");
-    return;
-  }
-  if (address - current->start_code > TASK_SIZE) {
+  /* Trashing ? Make it interruptible, but don't penalize otherwise */
+  for (i = 0; i < CHECK_LAST_NR; i++)
+    if ((address & 0xfffff000) == last_pages[i]) {
+      current->counter = 0;
+      schedule();
+    }
+  last_checked++;
+  if (last_checked >= CHECK_LAST_NR)
+    last_checked = 0;
+  last_pages[last_checked] = address & 0xfffff000;
+  if (address < TASK_SIZE)
+    panic("\n\rBAD!! KERNEL PAGE MISSING\n\r");
+  if (address - tsk->start_code >= TASK_SIZE) {
     printk("Bad things happen: nonexistent page error in do_no_page\n\r");
     do_exit(SIGSEGV);
   }
-#ifdef CONFIG_PATCH
-  page = pg_dir[address >> 22];
-#else
-  page = *(unsigned long *)((address >> 20) & 0xffc);
-#endif
+  page = *PG_DIR_ENTRY(address);
+  /* check the page directory: make a page dir entry if no such exists */
   if (page & 1) {
     page &= 0xfffff000;
     page += (address >> 10) & 0xffc;
@@ -475,14 +480,21 @@ void do_no_page(unsigned long error_code, unsigned long address,
       swap_in((unsigned long *)page);
       return;
     }
+  } else {
+    if (page)
+      printk("do_no_page: bad page directory\n");
+    if (!(page = get_free_page()))
+      oom();
+    page |= 7;
+    *(PG_DIR_ENTRY(address)) = page;
   }
   address &= 0xfffff000;
-  tmp = address - current->start_code;
+  tmp = address - tsk->start_code;
   if (tmp >= LIBRARY_OFFSET) {
-    inode = current->library;
+    inode = tsk->library;
     block = 1 + (tmp - LIBRARY_OFFSET) / BLOCK_SIZE;
-  } else if (tmp < current->end_data) {
-    inode = current->executable;
+  } else if (tmp < tsk->end_data) {
+    inode = tsk->executable;
     block = 1 + tmp / BLOCK_SIZE;
   } else {
     inode = NULL;
@@ -492,18 +504,19 @@ void do_no_page(unsigned long error_code, unsigned long address,
     get_empty_page(address);
     return;
   }
-  if (share_page(inode, tmp))
-    return;
+  if (tsk == current)
+    if (share_page(inode, tmp))
+      return;
   if (!(page = get_free_page()))
     oom();
   /* remember that 1 block is used for header */
   for (i = 0; i < 4; block++, i++)
     nr[i] = bmap(inode, block);
   bread_page(page, inode->i_dev, nr);
-  i = tmp + 4096 - current->end_data;
+  i = tmp + 4096 - tsk->end_data;
   if (i > 4095)
     i = 0;
-  tmp = page + 4096; // address - start_code + 4096 - end_data + page + 4096
+  tmp = page + 4096;
   while (i-- > 0) {
     tmp--;
     *(char *)tmp = 0;
@@ -516,6 +529,50 @@ void do_no_page(unsigned long error_code, unsigned long address,
 
 // 内核保留使用的内存 (40MB) 需要建立恒等映射
 #define PAGING_RESERVED_SIZE (40 << 20)
+
+void show_mem(void) {
+  int i, j, k, free = 0, total = 0;
+  int shared = 0;
+  unsigned long *pg_tbl;
+
+  printk("Mem-info:\n\r");
+  for (i = 0; i < PAGING_PAGES; i++) {
+    if (mem_map[i] == USED)
+      continue;
+    total++;
+    if (!mem_map[i])
+      free++;
+    else
+      shared += mem_map[i] - 1;
+  }
+  printk("%d free pages of %d\n\r", free, total);
+  printk("%d pages shared\n\r", shared);
+  k = 0;
+  for (i = 4; i < 1024;) {
+    if (1 & pg_dir[i]) {
+      if (pg_dir[i] > HIGH_MEMORY) {
+        printk("page directory[%d]: %08X\n\r", i, pg_dir[i]);
+        continue;
+      }
+      if (pg_dir[i] > LOW_MEM)
+        free++, k++;
+      pg_tbl = (unsigned long *)(0xfffff000 & pg_dir[i]);
+      for (j = 0; j < 1024; j++)
+        if ((pg_tbl[j] & 1) && pg_tbl[j] > LOW_MEM)
+          if (pg_tbl[j] > HIGH_MEMORY)
+            printk("page_dir[%d][%d]: %08X\n\r", i, j, pg_tbl[j]);
+          else
+            k++, free++;
+    }
+    i++;
+    if (!(i & 15) && k) {
+      k++, free++; /* one page/process for task_struct */
+      printk("Process %d: %d pages\n\r", (i >> 4) - 1, k);
+      k = 0;
+    }
+  }
+  printk("Memory found: %d (%d)\n\r", free - shared, total);
+}
 
 // 8MB 以下: lowmemory + 内核 + 缓冲区 保留
 // 8MB-40MB: RAMDISK (32MB) 保留
@@ -572,50 +629,6 @@ void mem_init() {
   }
 }
 
-void show_mem(void) {
-  int i, j, k, free = 0, total = 0;
-  int shared = 0;
-  unsigned long *pg_tbl;
-
-  printk("Mem-info:\n\r");
-  for (i = 0; i < PAGING_PAGES; i++) {
-    if (mem_map[i] == USED)
-      continue;
-    total++;
-    if (!mem_map[i])
-      free++;
-    else
-      shared += mem_map[i] - 1;
-  }
-  printk("%d free pages of %d\n\r", free, total);
-  printk("%d pages shared\n\r", shared);
-  k = 0;
-  for (i = 4; i < 1024;) {
-    if (1 & pg_dir[i]) {
-      if (pg_dir[i] > HIGH_MEMORY) {
-        printk("page directory[%d]: %08X\n\r", i, pg_dir[i]);
-        continue;
-      }
-      if (pg_dir[i] > LOW_MEM)
-        free++, k++;
-      pg_tbl = (unsigned long *)(0xfffff000 & pg_dir[i]);
-      for (j = 0; j < 1024; j++)
-        if ((pg_tbl[j] & 1) && pg_tbl[j] > LOW_MEM)
-          if (pg_tbl[j] > HIGH_MEMORY)
-            printk("page_dir[%d][%d]: %08X\n\r", i, j, pg_tbl[j]);
-          else
-            k++, free++;
-    }
-    i++;
-    if (!(i & 15) && k) {
-      k++, free++; /* one page/process for task_struct */
-      printk("Process %d: %d pages\n\r", (i >> 4) - 1, k);
-      k = 0;
-    }
-  }
-  printk("Memory found: %d (%d)\n\r", free - shared, total);
-}
-
 int mmap(unsigned long vstart, unsigned long pstart, unsigned long page_nr,
          unsigned long bits) {
   unsigned long *dir = PG_DIR_ENTRY(vstart);
@@ -641,4 +654,50 @@ int mmap(unsigned long vstart, unsigned long pstart, unsigned long page_nr,
     }
   }
   return page_nr;
+}
+
+unsigned long kpage_alloc_start = 63UL * TASK_SIZE;
+
+void *kpage_alloc(unsigned long page_nr) {
+  unsigned long i = page_nr;
+  unsigned long ret = kpage_alloc_start;
+  unsigned long *dir = PG_DIR_ENTRY(kpage_alloc_start);
+  unsigned long *pt = PG_TBL_ENTRY(kpage_alloc_start);
+
+  if (!((*dir) & 1)) {
+    *dir = get_free_page() | 7;
+  }
+
+  while (i--) {
+    if (kpage_alloc_start + PAGE_SIZE >= 0xffc00000)
+      panic("kpage alloc overflow\n");
+    kpage_alloc_start += PAGE_SIZE;
+    *(pt++) = get_free_page() | 7;
+
+    if (UL(pt) % PAGE_SIZE == 0) {
+      dir++;
+      if (!((*dir) & 1)) {
+        *dir = get_free_page() | 7;
+      }
+    }
+  }
+  memset((void *)ret, 0, PAGE_SIZE * page_nr);
+  return (void *)ret;
+}
+
+/* This routine handles page faults.  It determines the address,
+   and the problem then passes it off to one of the appropriate
+   routines. */
+void do_page_fault(trap_stack_t stack) {
+  unsigned long address;
+  /* get the address */
+
+  __asm__("movl %%cr2,%0" : "=r"(address));
+  if (!(stack.error_code & 1)) {
+    do_no_page(stack.error_code, address, current);
+    return;
+  } else {
+    do_wp_page(stack.error_code, address, &stack);
+    return;
+  }
 }

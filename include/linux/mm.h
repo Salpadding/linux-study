@@ -6,10 +6,8 @@
 #include <linux/kernel.h>
 #include <signal.h>
 
-extern int SWAP_DEV;
-
-#define read_swap_page(nr, buffer) ll_rw_page(READ, SWAP_DEV, (nr), (buffer));
-#define write_swap_page(nr, buffer) ll_rw_page(WRITE, SWAP_DEV, (nr), (buffer));
+#define read_swap_page(nr, buffer) rw_swap_page(READ, (nr), (buffer));
+#define write_swap_page(nr, buffer) rw_swap_page(WRITE, (nr), (buffer));
 
 extern unsigned long get_free_page(void);
 extern unsigned long put_dirty_page(unsigned long page, unsigned long address);
@@ -48,7 +46,7 @@ extern unsigned char mem_map[PAGING_PAGES];
 #define RAMDISK_MEMORY_SIZE (32UL << 20)
 #define RAMDISK_MEMORY_END (RAMDISK_MEMORY_START + RAMDISK_MEMORY_SIZE)
 
-void* kpage_alloc(unsigned long page_nr);
+void *kpage_alloc(unsigned long page_nr);
 extern unsigned long kpage_alloc_start;
 
 #endif

@@ -67,21 +67,6 @@ void parallel_interrupt(void);
 void irq13(void);
 void alignment_check(void);
 
-typedef struct {
-  long *esp;
-  long error_code;
-  long fs;
-  long es;
-  long ds;
-  long ebp;
-  long esi;
-  long edi;
-  long edx;
-  long ecx;
-  long ebx;
-  long eax;
-} trap_stack_t;
-
 static void die(char *str, long esp_ptr, long nr) {
   long *esp = (long *)esp_ptr;
   int i;

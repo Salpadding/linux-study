@@ -15,7 +15,7 @@
 .globl double_fault,coprocessor_segment_overrun
 .globl invalid_TSS,segment_not_present,stack_segment
 .globl general_protection,coprocessor_error,irq13,reserved
-.globl alignment_check
+.globl alignment_check,page_fault
 
 divide_error:
 	pushl $do_divide_error
@@ -149,4 +149,6 @@ alignment_check:
 	pushl $do_alignment_check
 	jmp error_code
 
-
+page_fault:
+	pushl $do_page_fault
+	jmp error_code

@@ -1,6 +1,6 @@
 include ../rules.mk
 
-objs := memory.o swap.o page.o
+objs := memory.o swap.o
 
 
 all: mm.o
